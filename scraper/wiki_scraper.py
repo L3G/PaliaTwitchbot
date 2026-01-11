@@ -35,7 +35,8 @@ SKIP_PATTERNS = [
 ]
 
 # Language suffixes to skip (keep only English)
-LANGUAGE_SUFFIXES = ["/de", "/es", "/fr", "/it", "/ja", "/ko", "/pl", "/pt-br", "/ru", "/th", "/tr", "/uk", "/vi", "/zh-hans", "/zh-tw"]
+# Using regex pattern to catch all language codes like /de, /nl, /pt-br, /zh-hans, etc.
+LANGUAGE_SUFFIX_PATTERN = re.compile(r"/[a-z]{2}(-[a-z]{2,4})?$", re.IGNORECASE)
 
 # Priority pages to scrape first (most useful for Q&A)
 PRIORITY_PATTERNS = [
@@ -74,10 +75,9 @@ class WikiScraper:
         for pattern in SKIP_PATTERNS:
             if pattern in url:
                 return True
-        # Skip non-English pages
-        for suffix in LANGUAGE_SUFFIXES:
-            if url.endswith(suffix):
-                return True
+        # Skip non-English pages (match /xx or /xx-xxxx at end of URL)
+        if LANGUAGE_SUFFIX_PATTERN.search(url):
+            return True
         return False
 
     def _fetch_xml(self, url: str) -> ET.Element | None:
@@ -164,12 +164,13 @@ class WikiScraper:
             logger.warning(f"Failed to parse {url}: {e}")
             return None
 
-    def scrape_all(self, progress_callback=None) -> list[Chunk]:
+    def scrape_all(self, progress_callback=None, skip_urls: set[str] | None = None) -> list[Chunk]:
         """
         Scrape all wiki pages and return chunks.
 
         Args:
             progress_callback: Optional callback(current, total, url) for progress updates
+            skip_urls: Optional set of URLs to skip (for incremental scraping)
 
         Returns:
             List of all text chunks with metadata
@@ -179,6 +180,11 @@ class WikiScraper:
         # Filter out URLs to skip
         urls = [url for url in urls if not self.should_skip_url(url)]
         logger.info(f"Filtered to {len(urls)} URLs after removing skipped patterns")
+
+        # Filter out already-indexed URLs for incremental scraping
+        if skip_urls:
+            urls = [url for url in urls if url not in skip_urls]
+            logger.info(f"Incremental mode: {len(urls)} new URLs to scrape")
 
         # Sort to prioritize important pages
         def priority_key(url):

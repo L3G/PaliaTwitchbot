@@ -1,5 +1,6 @@
 """ChromaDB vector store operations."""
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -37,6 +38,15 @@ class VectorStore:
             metadata={"description": "Palia wiki content for Q&A"},
         )
 
+    def _generate_chunk_id(self, chunk) -> str:
+        """Generate a unique ID for a chunk based on its content."""
+        # Use URL + section + chunk_index for uniqueness
+        url = chunk.metadata.get("url", "")
+        section = chunk.metadata.get("section", "")
+        chunk_index = chunk.metadata.get("chunk_index", 0)
+        unique_str = f"{url}:{section}:{chunk_index}"
+        return hashlib.md5(unique_str.encode()).hexdigest()
+
     def add_chunks(self, chunks: list, batch_size: int = 100) -> None:
         """
         Add chunks to the vector store.
@@ -56,13 +66,13 @@ class VectorStore:
 
             texts = [chunk.text for chunk in batch]
             metadatas = [chunk.metadata for chunk in batch]
-            ids = [f"chunk_{i + j}" for j in range(len(batch))]
+            ids = [self._generate_chunk_id(chunk) for chunk in batch]
 
             # Generate embeddings
             embeddings = self.embeddings.embed_documents(texts)
 
-            # Add to collection
-            self.collection.add(
+            # Add to collection (upsert to handle re-scrapes)
+            self.collection.upsert(
                 ids=ids,
                 embeddings=embeddings,
                 documents=texts,
@@ -107,6 +117,18 @@ class VectorStore:
     def count(self) -> int:
         """Get the number of documents in the collection."""
         return self.collection.count()
+
+    def get_indexed_urls(self) -> set[str]:
+        """Get all unique URLs that have been indexed."""
+        # Get all metadata from the collection
+        results = self.collection.get(include=["metadatas"])
+        urls = set()
+        if results["metadatas"]:
+            for metadata in results["metadatas"]:
+                url = metadata.get("url", "")
+                if url:
+                    urls.add(url)
+        return urls
 
     def clear(self) -> None:
         """Clear all documents from the collection."""

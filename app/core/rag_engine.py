@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 from functools import lru_cache
 
 from cachetools import TTLCache
@@ -12,23 +13,28 @@ from app.core.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a helpful assistant for the game Palia. Answer questions based ONLY on the provided context from the Palia wiki.
+# Pattern to detect non-English wiki URLs (e.g., /wiki/Tish/nl, /wiki/Tish/pt-br)
+LANGUAGE_SUFFIX_PATTERN = re.compile(r"/[a-z]{2}(-[a-z]{2,4})?$", re.IGNORECASE)
+
+SYSTEM_PROMPT = """You are a helpful assistant for the game Palia. You have knowledge about Palia from your training and will also receive context from the Palia wiki.
 
 Rules:
 1. Be concise - responses must be under 280 characters (a wiki link will be added after)
-2. If the answer isn't in the context, say "I couldn't find that info."
-3. Never make up information not in the context
+2. Prioritize information from the wiki context when available
+3. If the wiki context doesn't have the answer, use your general knowledge about Palia
 4. Include specific details like locations, item names, or NPC names when relevant
 5. For gift preferences, be specific about what the villager loves/likes/dislikes
 6. Don't include citations or source references in your answer
-7. Write in a friendly, helpful tone suitable for Twitch chat"""
+7. Write in a friendly, helpful tone suitable for Twitch chat
+8. If you truly don't know, say "I'm not sure about that one!"
+"""
 
 USER_PROMPT_TEMPLATE = """Context from Palia Wiki:
 {context}
 
 Question: {question}
 
-Provide a brief, helpful answer (under 280 characters):"""
+Provide a brief, helpful answer (under 280 characters). Use the wiki context if relevant, otherwise use your general Palia knowledge:"""
 
 
 class RAGEngine:
@@ -86,10 +92,10 @@ class RAGEngine:
         return response.choices[0].message.content.strip()
 
     def _get_best_source_url(self, chunks: list[dict]) -> str | None:
-        """Get the URL of the most relevant source."""
+        """Get the URL of the most relevant English source."""
         for chunk in chunks:
             url = chunk["metadata"].get("url", "")
-            if url:
+            if url and not LANGUAGE_SUFFIX_PATTERN.search(url):
                 return url
         return None
 

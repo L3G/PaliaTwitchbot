@@ -52,6 +52,11 @@ def main():
         action="store_true",
         help="Clear existing database before scraping",
     )
+    parser.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only scrape pages not already in the database",
+    )
 
     args = parser.parse_args()
     setup_logging(args.verbose)
@@ -69,6 +74,13 @@ def main():
     if args.clear:
         print("Clearing existing database...")
         vector_store.clear()
+        existing_urls = set()
+    elif args.incremental:
+        print("Incremental mode: fetching already indexed URLs...")
+        existing_urls = vector_store.get_indexed_urls()
+        print(f"Found {len(existing_urls)} already indexed URLs")
+    else:
+        existing_urls = set()
 
     # Configure and run scraper
     config = ScraperConfig(
@@ -79,12 +91,19 @@ def main():
     print(f"\nStarting scrape with config:")
     print(f"  - Delay: {config.delay}s between requests")
     print(f"  - Max pages: {config.max_pages or 'unlimited'}")
+    print(f"  - Incremental: {args.incremental}")
     print()
 
     scraper = WikiScraper(config)
-    chunks = scraper.scrape_all(progress_callback=progress_callback)
+    chunks = scraper.scrape_all(
+        progress_callback=progress_callback,
+        skip_urls=existing_urls if args.incremental else None,
+    )
 
     if not chunks:
+        if args.incremental:
+            print("\nNo new pages to scrape. Database is up to date!")
+            return 0
         print("\nNo chunks were scraped. Check the logs for errors.")
         return 1
 
