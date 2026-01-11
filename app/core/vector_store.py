@@ -40,12 +40,8 @@ class VectorStore:
 
     def _generate_chunk_id(self, chunk) -> str:
         """Generate a unique ID for a chunk based on its content."""
-        # Use URL + section + chunk_index for uniqueness
-        url = chunk.metadata.get("url", "")
-        section = chunk.metadata.get("section", "")
-        chunk_index = chunk.metadata.get("chunk_index", 0)
-        unique_str = f"{url}:{section}:{chunk_index}"
-        return hashlib.md5(unique_str.encode()).hexdigest()
+        # Use text content hash for guaranteed uniqueness
+        return hashlib.md5(chunk.text.encode()).hexdigest()
 
     def add_chunks(self, chunks: list, batch_size: int = 100) -> None:
         """
